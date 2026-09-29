@@ -3,9 +3,12 @@
 namespace App\Http\Controllers\Auth;
 
 use App\Http\Controllers\Controller;
+use App\Mail\OtpMail;
+use App\Models\User;
 use Illuminate\Http\RedirectResponse;
 use Illuminate\Http\Request;
-use Illuminate\Support\Facades\Password;
+use Illuminate\Support\Facades\Log;
+use Illuminate\Support\Facades\Mail;
 use Illuminate\View\View;
 
 class PasswordResetLinkController extends Controller
@@ -19,26 +22,32 @@ class PasswordResetLinkController extends Controller
     }
 
     /**
-     * Handle an incoming password reset link request.
-     *
-     * @throws \Illuminate\Validation\ValidationException
+     * Handle an incoming password reset OTP request.
      */
     public function store(Request $request): RedirectResponse
     {
         $request->validate([
-            'email' => ['required', 'email'],
+            'email' => ['required', 'email', 'exists:users,email'],
+        ], [
+            'email.exists' => 'We could not find an account associated with this email address.',
         ]);
 
-        // We will send the password reset link to this user. Once we have attempted
-        // to send the link, we will examine the response then see the message we
-        // need to show to the user. Finally, we'll send out a proper response.
-        $status = Password::sendResetLink(
-            $request->only('email')
-        );
+        $user = User::where('email', $request->email)->first();
 
-        return $status == Password::RESET_LINK_SENT
-                    ? back()->with('status', __($status))
-                    : back()->withInput($request->only('email'))
-                            ->withErrors(['email' => __($status)]);
+        // Generate OTP for password reset
+        $otp = $user->generateOtp('password_reset');
+
+        try {
+            Mail::to($user->email)->send(new OtpMail($otp, 'Password Reset', $user->name));
+        } catch (\Exception $e) {
+            Log::error('Password reset OTP Email error: ' . $e->getMessage());
+        }
+
+        session([
+            'otp_user_id' => $user->id,
+            'otp_action' => 'password_reset',
+        ]);
+
+        return redirect()->route('otp.verify')->with('success', 'A 6-digit password reset code has been sent to your email.');
     }
 }

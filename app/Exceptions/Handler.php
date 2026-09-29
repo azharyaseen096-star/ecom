@@ -27,4 +27,26 @@ class Handler extends ExceptionHandler
             //
         });
     }
+
+    /**
+     * Render an exception into an HTTP response.
+     */
+    public function render($request, Throwable $e)
+    {
+        if ($this->isHttpException($e)) {
+            $statusCode = $e->getStatusCode();
+            if (view()->exists("errors.{$statusCode}")) {
+                return response()->view("errors.{$statusCode}", ['exception' => $e], $statusCode);
+            }
+        }
+
+        // In production or when debug is disabled, always render 500 error view cleanly
+        if (!config('app.debug') && !$this->isHttpException($e)) {
+            if (view()->exists('errors.500')) {
+                return response()->view('errors.500', ['exception' => $e], 500);
+            }
+        }
+
+        return parent::render($request, $e);
+    }
 }

@@ -4,40 +4,95 @@ namespace App\Http\Controllers;
 
 use Illuminate\Http\Request;
 use App\Models\Product;
-use App\Models\Order;
+use App\Models\Setting;
 
 class CartController extends Controller
 {
     public function index()
     {
         $cart = session()->get('cart', []);
+        
+        $subtotal = 0;
+        foreach ($cart as $item) {
+            $subtotal += $item['price'] * $item['quantity'];
+        }
 
-        return view('cart.index', compact('cart'));
+        $shippingFee = (int) Setting::get('shipping_fee', 250);
+        $freeShippingThreshold = (int) Setting::get('free_shipping_threshold', 3500);
+
+        if ($subtotal >= $freeShippingThreshold || $subtotal === 0) {
+            $effectiveShipping = 0;
+        } else {
+            $effectiveShipping = $shippingFee;
+        }
+
+        $total = $subtotal + $effectiveShipping;
+
+        $jazzcashNumber = Setting::get('jazzcash_account_number', '03001234567');
+        $easypaisaNumber = Setting::get('easypaisa_account_number', '03451234567');
+
+        return view('cart.index', compact('cart', 'subtotal', 'shippingFee', 'freeShippingThreshold', 'effectiveShipping', 'total', 'jazzcashNumber', 'easypaisaNumber'));
     }
 
-    public function add($id)
+    public function add(Request $request, $id)
     {
         $product = Product::findOrFail($id);
+        $quantity = max(1, (int)$request->input('quantity', 1));
 
         $cart = session()->get('cart', []);
 
         if (isset($cart[$id])) {
-
-            $cart[$id]['quantity']++;
-
+            $cart[$id]['quantity'] += $quantity;
         } else {
-
             $cart[$id] = [
+                'id' => $product->id,
                 'name' => $product->name,
                 'price' => $product->price,
-                'image' => $product->image,
-                'quantity' => 1
+                'original_price' => $product->original_price,
+                'image' => $product->image_url,
+                'quantity' => $quantity,
             ];
         }
 
         session()->put('cart', $cart);
 
-        return redirect()->route('cart') ->with('success', 'Product Added Successfully');
+        if ($request->wantsJson()) {
+            return response()->json([
+                'success' => true,
+                'message' => 'Product added to cart!',
+                'cart_count' => count($cart),
+            ]);
+        }
+
+        return redirect()->back()->with('success', 'Product added to cart successfully!');
+    }
+
+    public function increase($id)
+    {
+        $cart = session()->get('cart', []);
+
+        if (isset($cart[$id])) {
+            $cart[$id]['quantity']++;
+            session()->put('cart', $cart);
+        }
+
+        return back()->with('success', 'Cart updated!');
+    }
+
+    public function decrease($id)
+    {
+        $cart = session()->get('cart', []);
+
+        if (isset($cart[$id])) {
+            if ($cart[$id]['quantity'] > 1) {
+                $cart[$id]['quantity']--;
+            } else {
+                unset($cart[$id]);
+            }
+            session()->put('cart', $cart);
+        }
+
+        return back()->with('success', 'Cart updated!');
     }
 
     public function remove($id)
@@ -45,74 +100,16 @@ class CartController extends Controller
         $cart = session()->get('cart', []);
 
         if (isset($cart[$id])) {
-
             unset($cart[$id]);
-
             session()->put('cart', $cart);
         }
 
-        return back();
+        return back()->with('success', 'Item removed from cart!');
     }
 
-    public function checkout()
+    public function clear()
     {
-        $cart = session()->get('cart', []);
-
-        if (empty($cart)) {
-            return back()->with('error', 'Cart is Empty');
-        }
-
-        $total = 0;
-
-        foreach ($cart as $item) {
-            $total += $item['price'] * $item['quantity'];
-        }
-
-        Order::create([
-            'user_id' => auth()->id(),
-            'products' => json_encode($cart),
-            'total' => $total,
-            'status' => 'Pending',
-        ]);
-
         session()->forget('cart');
-
-        return redirect()->route('success')
-            ->with('success', 'Order Placed Successfully');
+        return back()->with('success', 'Cart cleared!');
     }
-    public function increase($id)
-{
-    $cart = session()->get('cart', []);
-
-    if (isset($cart[$id])) {
-
-        $cart[$id]['quantity']++;
-
-        session()->put('cart', $cart);
-    }
-
-    return back();
-}
-
-public function decrease($id)
-{
-    $cart = session()->get('cart', []);
-
-    if (isset($cart[$id])) {
-
-        if ($cart[$id]['quantity'] > 1) {
-
-            $cart[$id]['quantity']--;
-
-        } else {
-
-            unset($cart[$id]);
-
-        }
-
-        session()->put('cart', $cart);
-    }
-
-    return back();
-}
 }
