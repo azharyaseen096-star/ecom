@@ -17,3 +17,7 @@ yarn-error.log
 /.fleet
 /.idea
 /.vscode
+
+/chromium/
+/node_modules/
+/storage/logs/*.log
